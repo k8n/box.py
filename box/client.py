@@ -270,8 +270,10 @@ class CredentialsV2(object):
 
 
 class BoxHTTPAdapter(HTTPAdapter):
-    # noting that read timeout covers possible upload time
     def __init__(self, *args, **kwargs):
+        # pull out and transform Timeout parameters from kwargs;
+        # values for read and connect timeouts are set by default
+        # and may be disabled by passing 'None'
         timeout_kwargs = {}
         if 'read_timeout' in kwargs:
             read_timeout = kwargs.pop('read_timeout')
@@ -287,7 +289,6 @@ class BoxHTTPAdapter(HTTPAdapter):
         else:
             timeout_kwargs['connect'] = 2.0
 
-        # todo: need to permit default values somewhow
         self.timeout = Timeout(**timeout_kwargs)
 
         super(BoxHTTPAdapter, self).__init__(*args, **kwargs)
@@ -303,7 +304,7 @@ class BoxClient(object):
         """
         Args:
             - credentials: an access_token string, or an instance of CredentialsV1/CredentialsV2
-            - requests_session: a custom requests session object, optioanl
+            - requests_session: a custom requests session object, optional
         """
         if requests_session is None:
             self.session = requests.Session()
