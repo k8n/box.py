@@ -12,6 +12,9 @@ import urlparse
 
 import requests
 
+from requests.adapters import HTTPAdapter
+from requests.packages.urllib3.util import Timeout
+
 
 class EventFilter(object):
     """
@@ -266,13 +269,50 @@ class CredentialsV2(object):
         return True
 
 
+class BoxHTTPAdapter(HTTPAdapter):
+    # noting that read timeout covers possible upload time
+    def __init__(self, *args, **kwargs):
+        timeout_kwargs = {}
+        if 'read_timeout' in kwargs:
+            read_timeout = kwargs.pop('read_timeout')
+            if read_timeout is not None:
+                timeout_kwargs['read'] = read_timeout
+        else:
+            timeout_kwargs['read'] = 180.0
+
+        if 'connect_timeout' in kwargs:
+            connect_timeout = kwargs.pop('connect_timeout')
+            if connect_timeout is not None:
+                timeout_kwargs['connect'] = connect_timeout
+        else:
+            timeout_kwargs['connect'] = 2.0
+
+        # todo: need to permit default values somewhow
+        self.timeout = Timeout(**timeout_kwargs)
+
+        super(BoxHTTPAdapter, self).__init__(*args, **kwargs)
+
+    def send(self, *args, **kwargs):
+        kwargs.setdefault('timeout', self.timeout)
+        return super(BoxHTTPAdapter, self).send(*args, **kwargs)
+
+
 class BoxClient(object):
 
-    def __init__(self, credentials):
+    def __init__(self, credentials, requests_session=None):
         """
         Args:
             - credentials: an access_token string, or an instance of CredentialsV1/CredentialsV2
+            - requests_session: a custom requests session object, optioanl
         """
+        if requests_session is None:
+            self.session = requests.Session()
+            self.session.mount('https://www.box.com', BoxHTTPAdapter(max_retries=5))
+            self.session.mount('https://api.box.com', BoxHTTPAdapter(max_retries=5))
+            self.session.mount('https://upload.box.com', BoxHTTPAdapter(max_retries=5, read_timeout=None))
+        else:
+            self.session = requests_session
+
         if not hasattr(credentials, 'headers'):
             credentials = CredentialsV2(credentials)
 
@@ -315,7 +355,7 @@ class BoxClient(object):
 
         url = 'https://%s.box.com/2.0/%s' % (endpoint, resource)
 
-        response = requests.request(method, url, params=params, data=data, headers=headers, **kwargs)
+        response = self.session.request(method, url, params=params, data=data, headers=headers, **kwargs)
 
         if response.status_code == UNAUTHORIZED and try_refresh and self.credentials.refresh():
             return self._request(method, resource, params, data, headers, try_refresh=False, **kwargs)
@@ -632,10 +672,10 @@ class BoxClient(object):
             form['content_modified_at'] = content_modified_at.isoformat() if isinstance(content_modified_at, datetime) else content_modified_at
 
         # usually Box goes with data==json, but here they want headers (as per standard http form)
-        response = requests.post('https://upload.box.com/api/2.0/files/content',
-                                 form,
-                                 headers=self.default_headers,
-                                 files={filename: (filename, fileobj)})
+        response = self.session.post('https://upload.box.com/api/2.0/files/content',
+                                     form,
+                                     headers=self.default_headers,
+                                     files={filename: (filename, fileobj)})
 
         self._check_for_errors(response)
         return response.json()['entries'][0]
@@ -659,10 +699,10 @@ class BoxClient(object):
         if content_modified_at:
             form['content_modified_at'] = content_modified_at.isoformat() if isinstance(content_modified_at, datetime) else content_modified_at
 
-        response = requests.post('https://upload.box.com/api/2.0/files/{0}/content'.format(file_id),
-                                 form,
-                                 headers=headers,
-                                 files={'file': fileobj})
+        response = self.session.post('https://upload.box.com/api/2.0/files/{0}/content'.format(file_id),
+                                     form,
+                                     headers=headers,
+                                     files={'file': fileobj})
 
         self._check_for_errors(response)
         return response.json()['entries'][0]
@@ -776,7 +816,7 @@ class BoxClient(object):
 
             query['stream_position'] = stream_position
             query['stream_type'] = stream_type
-            response = requests.get(url, params=query)
+            response = self.session.get(url, params=query)
             self._check_for_errors(response)
             result = response.json()
 
