@@ -14,7 +14,8 @@ import requests
 
 from requests.adapters import HTTPAdapter
 from requests.packages.urllib3.util import Timeout
-
+from requests.packages.urllib3.poolmanager import PoolManager
+import ssl
 
 class EventFilter(object):
     """
@@ -292,6 +293,12 @@ class BoxHTTPAdapter(HTTPAdapter):
         self.timeout = Timeout(**timeout_kwargs)
 
         super(BoxHTTPAdapter, self).__init__(*args, **kwargs)
+
+    def init_poolmanager(self, connections, maxsize, block=False):
+        self.poolmanager = PoolManager(num_pools=connections,
+                                       maxsize=maxsize,
+                                       block=block,
+                                       ssl_version=ssl.PROTOCOL_TLSv1)
 
     def send(self, *args, **kwargs):
         kwargs.setdefault('timeout', self.timeout)
