@@ -632,6 +632,7 @@ class BoxClient(object):
                                  files={filename: (filename, fileobj)})
         
         if response.status_code == UNAUTHORIZED and self.credentials.refresh():
+            fileobj.seek(0)  # rewind, just in case
             response = requests.post('https://upload.box.com/api/2.0/files/content',
                                  form,
                                  headers=self.default_headers,
