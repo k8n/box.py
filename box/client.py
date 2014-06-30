@@ -617,7 +617,6 @@ class BoxClient(object):
             - content_modified_at: (optional) a timestamp (datetime or a properly formatted string) of the time the
               content was last modified
         """
-        try_refresh=True
         form = {"parent_id": self._get_id(parent)}
 
         if content_created_at:
@@ -631,9 +630,12 @@ class BoxClient(object):
                                  form,
                                  headers=self.default_headers,
                                  files={filename: (filename, fileobj)})
-        if response.status_code == UNAUTHORIZED and try_refresh and self.credentials.refresh():
-            try_refresh=False
-            return self.upload_file(filename, fileobj)
+        
+        if response.status_code == UNAUTHORIZED and self.credentials.refresh():
+            response = requests.post('https://upload.box.com/api/2.0/files/content',
+                                 form,
+                                 headers=self.default_headers,
+                                 files={filename: (filename, fileobj)})
         self._check_for_errors(response)
         return response.json()['entries'][0]
 
